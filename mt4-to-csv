@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+
+import argparse
+
+from bs4 import BeautifulSoup
+
+
+def get_count_of_operations(table):
+    """Returns count of trades + Deposit/Withdrawal."""
+
+    # Deposit/Withdrawal
+    operations = 0
+
+    # only trades
+    trades = None
+
+    for tr in table("tr"):
+        tds = tr("td")
+        if len(tds) > 2:
+            if tds[2].text == "balance":
+                operations += 1
+        if "Total Trades:" in tds[0].text:
+            trades = int(tds[1].text)
+            break
+
+    if not trades:
+        raise Exception("MT4 report is not detailed!")
+
+    return operations + trades
+
+
+def get_table_rows(filename):
+    """Returns rows of main table."""
+
+    html = None
+    with open(filename) as f:
+        html = f.read()
+
+    soup = BeautifulSoup(html, features="html.parser")
+    table = soup.find("div").find("table")
+
+    return table
+
+
+def remove_useless_rows(table, with_table_head=False):
+    """Returns only rows with trades."""
+
+    # first two rows are not a trade
+    table("tr")[0].extract()
+    table("tr")[0].extract()
+
+    if with_table_head:
+        get_table_head(table)
+
+    # remove cancelled trades
+    for tr in table("tr"):
+        tds = tr("td")
+        if tds[-1].text == "cancelled":
+            tr.extract()
+
+    # remove all rows after main table
+    operations_count = get_count_of_operations(table)
+    if not with_table_head:
+        operations_count += 1
+
+    for tr in table("tr")[operations_count:]:
+        tr.extract()
+
+    return table
+
+
+def get_table_head(table):
+    first_row = table("tr")[0]
+    table_head = ",".join([td.text for td in first_row("td")])
+
+    first_row.extract()
+    return table_head
+
+
+def convert_to_csv(filename):
+    """Save as '.csv'."""
+
+    table = get_table_rows(filename)
+
+    table = remove_useless_rows(table)
+    table_head = get_table_head(table)
+
+    with open("all_time.csv", "w") as f:
+        f.write(table_head + "\n")
+        for tr in table("tr"):
+            tds = tr("td")
+            row = ",".join([td.text for td in tds])
+            f.write(row + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "filename", help="path to mt4 detailed report.")
+    args = parser.parse_args()
+    convert_to_csv(args.filename)
+
+
+if __name__ == "__main__":
+    main()
