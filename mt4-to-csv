@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import matplotlib.pyplot as plt
 
 from bs4 import BeautifulSoup
 
@@ -93,13 +94,152 @@ def convert_to_csv(filename):
             f.write(row + "\n")
 
 
+def draw(x, y, wasted, deposit, withdrawal):
+    count = len(x)
+
+    ax = plt.subplot2grid((1, 1), (0, 0))
+    ax.plot(x, y, linewidth=1.0, label="Balance", color="midnightblue")
+    ax.fill_between(x, y, 0, color="seashell")
+
+    plt.grid(True, linestyle="--")
+    plt.legend()
+
+    plt.xlim(-5, count + 5)
+    plt.ylim(0, y[-1] + 50)
+
+    plt.xticks(list(range(0, len(x), 20)))
+    plt.yticks(list(range(0, round(y[-1]), 200)))
+
+    plt.xlabel("trade, n")
+    plt.ylabel("balance, $")
+
+    for i in wasted:
+        title = "Wasted ({0} t.)\nBalance: {1}".format(i, y[i])
+        plt.annotate(
+            title, xy=(i, 0),
+            fontsize=8, xytext=(+20, 5),
+            textcoords='offset points',
+            color="r",
+            arrowprops=dict(
+                arrowstyle="->",
+                connectionstyle="arc3,rad=.2", color="r"))
+
+    # first deposit
+    title = "Deposit {0}$\nBalance: {1}".format(round(y[0], 2), y[0])
+    plt.annotate(
+        title, xy=(0, y[0]),
+        fontsize=8, xytext=(-100, -20),
+        textcoords='offset points',
+        arrowprops=dict(
+            arrowstyle="->",
+            connectionstyle="arc3,rad=.2"))
+
+    for i in deposit[1:]:
+        title = "Deposit {0}$\nBalance: {1}".format(
+            round(y[i] - y[i-1], 2), y[i])
+        plt.annotate(
+            title, xy=(i, y[i]),
+            fontsize=8, xytext=(-50, 45),
+            textcoords='offset points',
+            arrowprops=dict(
+                arrowstyle="->"))
+
+    for i in withdrawal:
+        title = "Withdrawal +{0}$\nBalance: {1}".format(
+            round(y[i - 1] - y[i], 2), y[i])
+        plt.annotate(
+            title, xy=(i, y[i]),
+            fontsize=8, xytext=(-115, -40),
+            textcoords='offset points',
+            color="g",
+            arrowprops=dict(
+                arrowstyle="->",
+                connectionstyle="angle,angleA=0,angleB=-110,rad=10"))
+    plt.show()
+
+
+def get_indexes(rows):
+    """"""
+
+    wasted = []
+    deposit = []
+    withdrawal = []
+
+    balance = 0.0
+    for n, tr in enumerate(rows):
+        tds = tr("td")
+
+        profit = float(tds[-1].text.replace(" ", ""))
+        balance += profit
+
+        if tds[2].text == "balance":
+            if "Deposit" in tds[3].text or "deposit" in tds[3].text:
+                deposit.append(n)
+            if "IntrFr" in tds[3].text:
+                deposit.append(n)
+            if "Withdrawal" in tds[3].text:
+                withdrawal.append(n)
+            continue
+
+        swap = float(tds[-2].text.replace(" ", ""))
+        balance += swap
+        if balance < 9.0:
+            wasted.append(n)
+    return wasted, deposit, withdrawal
+
+
+def extend_report(filename):
+    table = get_table_rows(filename)
+    table = remove_useless_rows(table, with_table_head=True)
+
+    rows = table("tr")
+    rows.reverse()
+    count = len(rows)
+
+    plot_y = []
+    plot_x = list(range(count))
+
+    balance = 0.0
+    for tr in rows:
+        tds = tr("td")
+
+        profit = float(tds[-1].text.replace(" ", ""))
+        balance += profit
+
+        if tds[2].text == "balance":
+            plot_y.append(round(balance, 2))
+            continue
+
+        swap = float(tds[-2].text.replace(" ", ""))
+        balance += swap
+        plot_y.append(round(balance, 2))
+
+    wasted, deposit, withdrawal = get_indexes(rows)
+    draw(plot_x, plot_y, wasted, deposit, withdrawal)
+
+
 def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "filename", help="path to mt4 detailed report.")
+        "filename", help="path to mt4 detailed report. "
+        "NOTE: recommend use 'All history' report sorted by close time.")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--chart", help="get extended chart with marked "
+        "deposit/withdrawal/wasted.", action="store_true")
+    group.add_argument(
+        "--csv", help="convert to csv, save in 'filename.csv' (unstable).",
+        action="store_true")
+
     args = parser.parse_args()
-    convert_to_csv(args.filename)
+    if args.chart:
+        extend_report(args.filename)
+    elif args.csv:
+        convert_to_csv(args.filename)
+    else:
+        print("must specified --csv or --chart.")
 
 
 if __name__ == "__main__":
