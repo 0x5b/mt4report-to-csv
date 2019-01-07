@@ -2,4 +2,4 @@
 
 **Usage:**
 ```bash
-mt4-to-csv <filename>
+mt4-to-csv <filename> {--csv, --chart}
