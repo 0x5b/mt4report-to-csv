@@ -1,0 +1,4 @@
+*.htm
+*.csv
+*.swp
+.venv
